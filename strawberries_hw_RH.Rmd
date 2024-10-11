@@ -1,0 +1,130 @@
+---
+title: "Strawberry"
+author: "Ruihang Han"
+date: "2024-10-02"
+output:
+  pdf_document:
+    latex_engine: xelatex
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+library(readr)
+
+library(dplyr)
+library(tidyr)
+library(stringr)
+
+straw<-read.csv('strawberries25_v3.csv')
+
+# Define a function to remove columns with only one unique value
+remove_single_value_columns <- function(dataframe) {
+  dataframe %>% select_if(~ n_distinct(.) > 1)
+}
+
+# Apply the function to clean the dataframe
+straw_clean <- remove_single_value_columns(straw)
+
+# Group by 'State' and count the number of records for each group
+state_counts <- straw_clean %>%
+  group_by(State) %>%
+  tally()
+
+# Check if the sum of group counts equals the number of rows in the cleaned dataframe
+nrow(state_counts)
+sum(state_counts$n) == nrow(straw_clean)
+
+# Summarize the data by state
+state_summary <- straw_clean %>%
+  group_by(State) %>%
+  summarize(total_records = n())
+
+# Print the summary
+print(state_summary)
+
+# Filter for California CENSUS data and select specific columns
+california_census <- straw_clean %>%
+  filter(State == "CALIFORNIA", Program == "CENSUS") %>%
+  select(Year, `Data.Item`, Value)
+
+head(california_census)
+
+# Filter for California SURVEY data and select specific columns
+california_survey <- straw_clean %>%
+  filter(State == "CALIFORNIA", Program == "SURVEY") %>%
+  select(Year, Period, `Data.Item`, Value)
+
+# Define a function to process 'Data.Item' strings and extract relevant information
+parse_data_item <- function(text) {
+  text <- as.character(text)
+  text <- gsub("[–—-]", "-", text)  # Replace all types of dashes with a standard dash
+  segments <- strsplit(text, " - ")[[1]]  # Split the string by " - "
+  
+  fruit <- "Strawberries"  # Set the default fruit name
+  
+  # Case 1: If the string splits into 2 parts
+  if (length(segments) == 2) {
+    category <- str_remove(segments[1], "^STRAWBERRIES,?\\s*") %>% trimws()  # Clean the category
+    details <- strsplit(segments[2], ",")[[1]]  # Split the details by ","
+    item <- trimws(details[1])  # Extract item
+    metric <- ifelse(length(details) > 1, trimws(details[2]), "N/A")  # Extract metric if available
+  # Case 2: If the string splits into 3 parts
+  } else if (length(segments) == 3) {
+    category <- str_remove(segments[2], "^STRAWBERRIES,?\\s*") %>% trimws()
+    details <- strsplit(segments[3], ",")[[1]]
+    item <- trimws(details[1])
+    metric <- ifelse(length(details) > 1, trimws(details[2]), "N/A")
+  # Case 3: Default case when only 1 part exists
+  } else {
+    category <- str_remove(segments[1], "^STRAWBERRIES,?\\s*") %>% trimws()
+    item <- "N/A"
+    metric <- "N/A"
+  }
+  
+  # Return the parsed information as a list
+  list(Fruit = fruit, Category = category, Item = item, Metric = metric)
+}
+
+# Apply 'parse_data_item' function to each row in 'Data.Item' and combine the results
+straw_clean <- bind_cols(straw_clean, do.call(rbind, lapply(straw_clean$`Data.Item`, parse_data_item)) %>% as.data.frame(stringsAsFactors = FALSE))
+
+# Group by 'Domain.Category' and count occurrences
+domain_category_counts <- straw_clean %>%
+  group_by(Domain.Category) %>%
+  tally()
+
+nrow(domain_category_counts)
+
+# Split 'Domain.Category' column into 'use' and 'details' columns
+straw_clean <- straw_clean %>%
+  separate(col = `Domain.Category`, into = c("use", "details"), sep = ": ", extra = "drop", fill = "right") %>%
+  mutate(
+    name = str_extract(details, "(?<=\\().*?(?=\\=)"),  # Extract the name part from the details
+    code = str_extract(details, "(?<=\\= ).*?(?=\\))")  # Extract the code part from the details
+  )
+
+# Clean up the 'use' column by removing "CHEMICAL, " prefix
+straw_clean$use <- str_remove(straw_clean$use, "^CHEMICAL, ")
+
+# Convert 'Value' and 'CV....' columns to numeric
+straw_clean$Value <- as.numeric(straw_clean$Value)
+straw_clean$CV.... <- as.numeric(straw_clean$CV....)
+
+# Remove the 'Data.Item' column as it's no longer needed
+straw_clean <- straw_clean %>%
+  select(-`Data.Item`)
+
+# Display the cleaned dataframe
+head(straw_clean)
+
+```
+
+
+
+
+
+
